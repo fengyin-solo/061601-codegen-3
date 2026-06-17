@@ -2,8 +2,8 @@
 import { ref, computed } from 'vue'
 import { useGameStore } from '../stores/gameStore'
 import gameConfig from '../config/gameConfig'
-import { calculateSMSReplyChance, getSMSTimeLabel } from '../utils/gameUtils'
-import type { SMSOption } from '../types/game'
+import { calculateSMSReplyChance, getSMSTimeLabel, getTimeLabel, getTimeUntilReply } from '../utils/gameUtils'
+import type { SMSOption, PendingSMS } from '../types/game'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -11,19 +11,25 @@ const emit = defineEmits<{
 
 const gameStore = useGameStore()
 const selectedOptionId = ref<string | null>(null)
-const showReply = ref(false)
 
 const currentCharacterConfig = computed(() => gameStore.currentCharacterConfig)
 
-const smsOptionsForCharacter = computed(() => {
-  return gameStore.availableSMSOptions
+const availableOptions = computed(() => gameStore.availableSMSOptions)
+
+const pendingForCharacter = computed(() => {
+  if (!gameStore.selectedCharacterId) return []
+  return gameStore.pendingSMS.filter(
+    s => s.characterId === gameStore.selectedCharacterId && !s.replied
+  )
 })
 
 const repliedHistory = computed(() => {
   if (!gameStore.selectedCharacterId) return []
   return gameStore.pendingSMS
     .filter(s => s.characterId === gameStore.selectedCharacterId && s.replied)
-    .slice(-5)
+    .slice()
+    .reverse()
+    .slice(0, 5)
 })
 
 function getAcceptChance(option: SMSOption): number {
@@ -58,14 +64,32 @@ function getCharacterAvatar(characterId: string): string {
   return gameConfig.characters.find(c => c.id === characterId)?.avatar || ''
 }
 
+function getPendingTimeLabel(sms: PendingSMS): string {
+  const remaining = getTimeUntilReply(
+    gameStore.day,
+    gameStore.timeSlot,
+    sms.replyDay,
+    sms.replyTime,
+    gameConfig.timeSlots
+  )
+  if (remaining <= 0) return '即将回复'
+  if (remaining === 1) return '还有1个时段'
+  return `还有${remaining}个时段`
+}
+
+function getOptionText(optionId: string): string {
+  return gameConfig.smsOptions.find(o => o.id === optionId)?.text || ''
+}
+
 function sendSMS() {
   if (!selectedOptionId.value) return
-  gameStore.sendSMS(selectedOptionId.value)
-  showReply.value = true
+  const success = gameStore.sendSMS(selectedOptionId.value)
+  if (success) {
+    selectedOptionId.value = null
+  }
 }
 
 function handleClose() {
-  showReply.value = false
   selectedOptionId.value = null
   gameStore.dismissSMSReply()
   emit('close')
@@ -81,76 +105,116 @@ function handleClose() {
           <button class="close-btn" @click="handleClose">✕</button>
         </div>
 
-        <div v-if="showReply && gameStore.lastSMSReply" class="reply-section animate-fade-in">
-          <div class="phone-screen" :class="gameStore.lastSMSReply.accepted ? 'phone-positive' : 'phone-negative'">
-            <div class="phone-header">
-              <span class="phone-avatar">{{ getCharacterAvatar(gameStore.lastSMSReply.characterId) }}</span>
-              <span class="phone-name">{{ getCharacterName(gameStore.lastSMSReply.characterId) }}</span>
-            </div>
-            <div class="phone-messages">
-              <div class="msg-bubble msg-sent">
-                {{ gameConfig.smsOptions.find(o => o.id === gameStore.lastSMSReply!.optionId)?.text }}
-              </div>
-              <div class="msg-bubble msg-received" :class="gameStore.lastSMSReply.accepted ? 'msg-accept' : 'msg-reject'">
-                {{ gameStore.lastSMSReply.replyText }}
-              </div>
-            </div>
-            <div class="reply-status" :class="gameStore.lastSMSReply.accepted ? 'status-accept' : 'status-reject'">
-              <span v-if="gameStore.lastSMSReply.accepted">✅ 邀约成功！</span>
-              <span v-else>❌ 被婉拒了...</span>
-            </div>
-          </div>
-          <button class="btn btn-primary reply-close-btn" @click="showReply = false; gameStore.dismissSMSReply()">
-            知道了
-          </button>
+        <div v-if="!currentCharacterConfig" class="no-character">
+          请先选择一个角色
         </div>
 
         <template v-else>
-          <div v-if="!currentCharacterConfig" class="no-character">
-            请先选择一个角色
-          </div>
-
-          <div v-else class="sms-target">
+          <div class="sms-target">
             <span class="target-avatar">{{ currentCharacterConfig.avatar }}</span>
-            <span class="target-name">给 {{ currentCharacterConfig.name }} 发短信</span>
+            <span class="target-name">与 {{ currentCharacterConfig.name }} 的短信</span>
+            <span v-if="pendingForCharacter.length > 0" class="pending-badge">
+              {{ pendingForCharacter.length }} 条待回复
+            </span>
           </div>
 
-          <div v-if="currentCharacterConfig && smsOptionsForCharacter.length === 0" class="no-options">
-            <p>暂时没有可以发送的邀约话题</p>
-            <p class="hint-text">提升好感度可能解锁更多话题</p>
-          </div>
-
-          <div v-else-if="currentCharacterConfig" class="sms-list">
-            <div
-              v-for="option in smsOptionsForCharacter"
-              :key="option.id"
-              class="sms-item"
-              :class="{ selected: selectedOptionId === option.id }"
-              @click="selectedOptionId = option.id"
-            >
-              <div class="sms-item-header">
-                <span class="sms-text">{{ option.text }}</span>
-              </div>
-              <div class="sms-item-desc">{{ option.description }}</div>
-              <div class="sms-item-meta">
-                <span class="sms-time-cost">⏱ {{ getSMSTimeLabel(option.timeCost) }}</span>
-                <span class="sms-chance" :class="getChanceClass(getAcceptChance(option))">
-                  接受概率：{{ getChanceLabel(getAcceptChance(option)) }}（{{ Math.round(getAcceptChance(option) * 100) }}%）
-                </span>
+          <!-- 待回复的短信 -->
+          <div v-if="pendingForCharacter.length > 0" class="pending-section">
+            <h3 class="section-title">
+              <span class="section-icon">⏳</span>
+              等待回复
+            </h3>
+            <div class="pending-list">
+              <div
+                v-for="sms in pendingForCharacter"
+                :key="sms.id"
+                class="pending-item"
+              >
+                <div class="pending-header">
+                  <span class="pending-text">「{{ getOptionText(sms.optionId) }}」</span>
+                </div>
+                <div class="pending-meta">
+                  <span class="pending-time">
+                    发送于 第{{ sms.sentDay }}天 {{ getTimeLabel(sms.sentTime) }}
+                  </span>
+                  <span class="pending-countdown">
+                    {{ getPendingTimeLabel(sms) }}
+                    <span class="pending-reply-time">
+                      （预计第{{ sms.replyDay }}天 {{ getTimeLabel(sms.replyTime) }}）
+                    </span>
+                  </span>
+                </div>
+                <div class="pending-progress-bar">
+                  <div
+                    class="pending-progress-fill"
+                    :style="{
+                      width: `${Math.max(5, 100 - (getTimeUntilReply(
+                        gameStore.day, gameStore.timeSlot,
+                        sms.replyDay, sms.replyTime, gameConfig.timeSlots
+                      ) / sms.timeCost) * 100)}%`
+                    }"
+                  ></div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div v-if="repliedHistory.length > 0" class="sms-history">
-            <h3 class="history-title">历史短信</h3>
-            <div
-              v-for="sms in repliedHistory"
-              :key="sms.id"
-              class="history-item"
-              :class="sms.accepted ? 'history-accept' : 'history-reject'"
-            >
-              <span class="history-status">{{ sms.accepted ? '✅' : '❌' }}</span>
-              <span class="history-text">{{ sms.replyText }}</span>
+          <!-- 可发送的新话题 -->
+          <div class="compose-section">
+            <h3 class="section-title">
+              <span class="section-icon">✉️</span>
+              发送新短信
+            </h3>
+
+            <div v-if="availableOptions.length === 0" class="no-options">
+              <p>暂时没有可以发送的邀约话题</p>
+              <p class="hint-text">提升好感度可能解锁更多话题</p>
+            </div>
+
+            <div v-else class="sms-list">
+              <div
+                v-for="option in availableOptions"
+                :key="option.id"
+                class="sms-item"
+                :class="{ selected: selectedOptionId === option.id }"
+                @click="selectedOptionId = option.id"
+              >
+                <div class="sms-item-header">
+                  <span class="sms-text">{{ option.text }}</span>
+                </div>
+                <div class="sms-item-desc">{{ option.description }}</div>
+                <div class="sms-item-meta">
+                  <span class="sms-time-cost">⏱ {{ getSMSTimeLabel(option.timeCost) }}</span>
+                  <span class="sms-chance" :class="getChanceClass(getAcceptChance(option))">
+                    接受概率：{{ getChanceLabel(getAcceptChance(option)) }}（{{ Math.round(getAcceptChance(option) * 100) }}%）
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 历史回复 -->
+          <div v-if="repliedHistory.length > 0" class="history-section">
+            <h3 class="section-title">
+              <span class="section-icon">📜</span>
+              历史短信
+            </h3>
+            <div class="history-list">
+              <div
+                v-for="sms in repliedHistory"
+                :key="sms.id"
+                class="history-item"
+                :class="sms.accepted ? 'history-accept' : 'history-reject'"
+              >
+                <div class="history-row">
+                  <span class="history-status">{{ sms.accepted ? '✅ 已接受' : '❌ 已婉拒' }}</span>
+                  <span class="history-date">第{{ sms.sentDay }}天</span>
+                </div>
+                <div class="history-content">
+                  <div class="history-sent">我：{{ getOptionText(sms.optionId) }}</div>
+                  <div class="history-reply">{{ getCharacterName(sms.characterId) }}：{{ sms.replyText }}</div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -159,13 +223,13 @@ function handleClose() {
               行动力：{{ gameStore.actionsRemaining }}
             </span>
             <div class="footer-buttons">
-              <button class="btn btn-secondary" @click="handleClose">取消</button>
+              <button class="btn btn-secondary" @click="handleClose">关闭</button>
               <button
                 class="btn btn-primary"
                 :disabled="!selectedOptionId || gameStore.actionsRemaining <= 0"
                 @click="sendSMS"
               >
-                发送短信
+                发送
               </button>
             </div>
           </div>
@@ -232,10 +296,123 @@ function handleClose() {
   font-weight: 500;
 }
 
+.pending-badge {
+  margin-left: auto;
+  font-size: 12px;
+  padding: 2px 10px;
+  background: #f59e0b;
+  color: white;
+  border-radius: 9999px;
+  font-weight: 500;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+}
+
+.section-icon {
+  font-size: 16px;
+}
+
+.pending-section {
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pending-item {
+  padding: 12px 14px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: var(--radius-md);
+}
+
+[data-theme='dark'] .pending-item {
+  background: #451a03;
+  border-color: #d97706;
+}
+
+.pending-header {
+  margin-bottom: 8px;
+}
+
+.pending-text {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.pending-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.pending-countdown {
+  font-weight: 500;
+  color: #d97706;
+}
+
+[data-theme='dark'] .pending-countdown {
+  color: #fbbf24;
+}
+
+.pending-reply-time {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.pending-progress-bar {
+  height: 4px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+[data-theme='dark'] .pending-progress-bar {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.pending-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #fbbf24, #f59e0b);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.compose-section {
+  margin-bottom: 16px;
+}
+
 .no-options {
   text-align: center;
-  padding: 30px;
+  padding: 24px;
   color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
 }
 
 .hint-text {
@@ -248,7 +425,7 @@ function handleClose() {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 300px;
+  max-height: 280px;
   overflow-y: auto;
   padding-right: 8px;
 }
@@ -358,34 +535,36 @@ function handleClose() {
   color: #f9a8d4;
 }
 
-.sms-history {
-  margin-top: 16px;
-  padding-top: 12px;
+.history-section {
+  padding-top: 14px;
   border-top: 1px solid var(--border-light);
+  margin-bottom: 16px;
 }
 
-.history-title {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 6px;
 }
 
 .history-item {
-  display: flex;
-  gap: 8px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-radius: var(--radius-sm);
-  margin-bottom: 6px;
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .history-accept {
   background: #f0fdf4;
+  border-left: 3px solid #22c55e;
 }
 
 .history-reject {
   background: #fef2f2;
+  border-left: 3px solid #ef4444;
 }
 
 [data-theme='dark'] .history-accept {
@@ -396,117 +575,42 @@ function handleClose() {
   background: #7f1d1d;
 }
 
+.history-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
 .history-status {
-  flex-shrink: 0;
+  font-weight: 600;
+  font-size: 11px;
 }
 
-.history-text {
+.history-date {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.history-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.history-sent {
   color: var(--text-secondary);
-  word-break: break-word;
 }
 
-.reply-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-.phone-screen {
-  width: 100%;
-  border-radius: var(--radius-lg);
-  padding: 16px;
-  background: #1a1a2e;
-}
-
-.phone-positive {
-  border: 2px solid #22c55e;
-}
-
-.phone-negative {
-  border: 2px solid #ef4444;
-}
-
-.phone-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.phone-avatar {
-  font-size: 24px;
-}
-
-.phone-name {
-  color: #f1f5f9;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.phone-messages {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.msg-bubble {
-  padding: 10px 14px;
-  border-radius: 12px;
-  font-size: 13px;
-  line-height: 1.5;
-  max-width: 85%;
-  word-break: break-word;
-}
-
-.msg-sent {
-  align-self: flex-end;
-  background: #3b82f6;
-  color: white;
-  border-bottom-right-radius: 4px;
-}
-
-.msg-received {
-  align-self: flex-start;
-  border-bottom-left-radius: 4px;
-}
-
-.msg-accept {
-  background: #166534;
-  color: #86efac;
-}
-
-.msg-reject {
-  background: #7f1d1d;
-  color: #fca5a5;
-}
-
-.reply-status {
-  margin-top: 14px;
-  text-align: center;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.status-accept {
-  color: #22c55e;
-}
-
-.status-reject {
-  color: #ef4444;
-}
-
-.reply-close-btn {
-  width: 100%;
+.history-reply {
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
 .modal-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid var(--border-light);
 }

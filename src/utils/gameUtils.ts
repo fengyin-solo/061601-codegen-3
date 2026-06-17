@@ -175,6 +175,60 @@ export function calculateSMSReplyChance(
 }
 
 export function getSMSTimeLabel(timeCost: number): string {
-  if (timeCost <= 1) return '需等待1个时段'
-  return `需等待${timeCost}个时段`
+  if (timeCost <= 1) return '1个时段后回复'
+  return `${timeCost}个时段后回复`
+}
+
+export interface TimePoint {
+  day: number
+  time: TimeOfDay
+}
+
+export function addTimeSlots(
+  startDay: number,
+  startTime: TimeOfDay,
+  slots: number,
+  timeSlots: TimeOfDay[]
+): TimePoint {
+  let day = startDay
+  let currentIndex = timeSlots.indexOf(startTime)
+  let remaining = slots
+
+  while (remaining > 0) {
+    if (currentIndex < timeSlots.length - 1) {
+      currentIndex++
+    } else {
+      currentIndex = 0
+      day++
+    }
+    remaining--
+  }
+
+  return { day, time: timeSlots[currentIndex] }
+}
+
+export function getTimeUntilReply(
+  currentDay: number,
+  currentTime: TimeOfDay,
+  replyDay: number,
+  replyTime: TimeOfDay,
+  timeSlots: TimeOfDay[]
+): number {
+  let slots = 0
+  let day = currentDay
+  let timeIndex = timeSlots.indexOf(currentTime)
+
+  while (day < replyDay || timeIndex < timeSlots.indexOf(replyTime)) {
+    if (timeIndex < timeSlots.length - 1) {
+      timeIndex++
+    } else {
+      timeIndex = 0
+      day++
+    }
+    slots++
+    if (slots > 100) break
+  }
+
+  if (day === replyDay && timeIndex === timeSlots.indexOf(replyTime)) return 0
+  return slots
 }

@@ -14,6 +14,13 @@ const canPerformAction = computed(() => gameStore.actionsRemaining > 0)
 
 const hasSelectedCharacter = computed(() => gameStore.selectedCharacterId !== null)
 
+const pendingSMSCount = computed(() => {
+  if (!gameStore.selectedCharacterId) return 0
+  return gameStore.pendingSMS.filter(
+    s => s.characterId === gameStore.selectedCharacterId && !s.replied
+  ).length
+})
+
 function doChat() {
   if (!hasSelectedCharacter.value || !canPerformAction.value) return
   gameStore.performAction('chat', gameStore.selectedCharacterId!)
@@ -60,7 +67,10 @@ function doWork() {
         :disabled="!hasSelectedCharacter || !canPerformAction"
         @click="emit('open-sms')"
       >
-        <span class="action-icon">📱</span>
+        <span class="action-icon">
+          📱
+          <span v-if="pendingSMSCount > 0" class="sms-badge">{{ pendingSMSCount }}</span>
+        </span>
         <span class="action-name">短信</span>
         <span class="action-desc">发短信邀约角色</span>
         <span class="action-cost">消耗 1 行动力</span>
@@ -146,6 +156,30 @@ function doWork() {
 
 .action-icon {
   font-size: 32px;
+  position: relative;
+}
+
+.sms-badge {
+  position: absolute;
+  top: -6px;
+  right: -10px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: #ef4444;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
 }
 
 .action-name {

@@ -12,7 +12,8 @@ import {
   getTimeLabel,
   getNextTimeSlot,
   getMoodLabel,
-  calculateSMSReplyChance
+  calculateSMSReplyChance,
+  addTimeSlots
 } from '../utils/gameUtils'
 
 export interface CharacterState {
@@ -51,6 +52,8 @@ export interface PendingSMS {
   characterId: string
   sentDay: number
   sentTime: TimeOfDay
+  replyDay: number
+  replyTime: TimeOfDay
   timeCost: number
   replied: boolean
   accepted: boolean
@@ -211,6 +214,7 @@ export const useGameStore = defineStore('game', () => {
       timeSlot.value = nextSlot
     }
     checkAndTriggerEvent()
+    processDueSMSReplies()
   }
 
   function nextDay() {
@@ -378,12 +382,16 @@ export const useGameStore = defineStore('game', () => {
     saveHistory()
     actionsRemaining.value -= 1
 
+    const replyAt = addTimeSlots(day.value, timeSlot.value, option.timeCost, gameConfig.timeSlots)
+
     const sms: PendingSMS = {
       id: ++smsIdCounter,
       optionId: option.id,
       characterId: option.characterId,
       sentDay: day.value,
       sentTime: timeSlot.value,
+      replyDay: replyAt.day,
+      replyTime: replyAt.time,
       timeCost: option.timeCost,
       replied: false,
       accepted: false,
@@ -395,21 +403,28 @@ export const useGameStore = defineStore('game', () => {
     const charConfig = gameConfig.characters.find(c => c.id === option.characterId)
     const characterName = charConfig?.name || option.characterId
     addLog('action', `📱 给 ${characterName} 发了短信：「${option.text}」`, option.characterId)
-
-    for (let i = 0; i < option.timeCost; i++) {
-      advanceTime()
-    }
-
-    processSMSReplies()
+    addLog('system', `⏳ 等待回复中...预计第${replyAt.day}天 ${getTimeLabel(replyAt.time)}有结果`, option.characterId)
 
     return true
   }
 
-  function processSMSReplies() {
-    const toProcess = pendingSMS.value.filter(s => !s.replied)
-    if (toProcess.length === 0) return
+  function processDueSMSReplies() {
+    const timeSlots = gameConfig.timeSlots
+    const currentTimeIndex = timeSlots.indexOf(timeSlot.value)
 
-    for (const sms of toProcess) {
+    const dueReplies = pendingSMS.value.filter(s => {
+      if (s.replied) return false
+      if (s.replyDay < day.value) return true
+      if (s.replyDay === day.value) {
+        const replyTimeIndex = timeSlots.indexOf(s.replyTime)
+        return replyTimeIndex <= currentTimeIndex
+      }
+      return false
+    })
+
+    if (dueReplies.length === 0) return
+
+    for (const sms of dueReplies) {
       const option = gameConfig.smsOptions.find(o => o.id === sms.optionId)
       if (!option) continue
 
