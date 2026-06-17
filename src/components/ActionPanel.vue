@@ -5,6 +5,7 @@ import gameConfig from '../config/gameConfig'
 
 const emit = defineEmits<{
   (e: 'open-gift'): void
+  (e: 'open-sms'): void
 }>()
 
 const gameStore = useGameStore()
@@ -55,6 +56,17 @@ function doWork() {
       </button>
 
       <button 
+        class="action-btn sms"
+        :disabled="!hasSelectedCharacter || !canPerformAction"
+        @click="emit('open-sms')"
+      >
+        <span class="action-icon">📱</span>
+        <span class="action-name">短信</span>
+        <span class="action-desc">发短信邀约角色</span>
+        <span class="action-cost">消耗 1 行动力</span>
+      </button>
+
+      <button 
         class="action-btn work"
         :disabled="!canPerformAction"
         @click="doWork"
@@ -96,7 +108,7 @@ function doWork() {
 
 .action-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
 }
 
@@ -126,6 +138,10 @@ function doWork() {
 
 .action-btn.work:hover:not(:disabled) {
   background: #dcfce7;
+}
+
+.action-btn.sms:hover:not(:disabled) {
+  background: #ede9fe;
 }
 
 .action-icon {
@@ -167,7 +183,7 @@ function doWork() {
 
 @media (max-width: 600px) {
   .action-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 </style>

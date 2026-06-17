@@ -1,4 +1,4 @@
-import type { TimeOfDay, MoodLevel, GameConfig, CharacterConfig } from '../types/game'
+import type { TimeOfDay, MoodLevel, GameConfig, CharacterConfig, SMSOption } from '../types/game'
 
 export function getMoodLevel(mood: number): MoodLevel {
   if (mood >= 80) return 'happy'
@@ -155,4 +155,26 @@ export function calculateGiftAffinity(
   baseChange *= moodMultiplier
 
   return Math.round(baseChange * 10) / 10
+}
+
+export function calculateSMSReplyChance(
+  option: SMSOption,
+  affinity: number,
+  mood: number,
+  maxAffinity: number
+): number {
+  let chance = option.baseAcceptChance
+
+  const affinityRatio = affinity / maxAffinity
+  chance += affinityRatio * 0.25
+
+  const moodRatio = mood / 100
+  chance += (moodRatio - 0.5) * 0.2
+
+  return clamp(chance, 0.05, 0.95)
+}
+
+export function getSMSTimeLabel(timeCost: number): string {
+  if (timeCost <= 1) return '需等待1个时段'
+  return `需等待${timeCost}个时段`
 }

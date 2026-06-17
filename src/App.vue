@@ -11,6 +11,7 @@ import SaveModal from './components/SaveModal.vue'
 import CardCollection from './components/CardCollection.vue'
 import HistoryPanel from './components/HistoryPanel.vue'
 import GiftModal from './components/GiftModal.vue'
+import SMSModal from './components/SMSModal.vue'
 
 const gameStore = useGameStore()
 const saveStore = useSaveStore()
@@ -19,6 +20,7 @@ const showSaveModal = ref(false)
 const showCards = ref(false)
 const showHistory = ref(false)
 const showGiftModal = ref(false)
+const showSMSModal = ref(false)
 
 const theme = computed(() => gameStore.darkMode ? 'dark' : 'light')
 
@@ -59,7 +61,7 @@ onMounted(() => {
     <div class="main-content">
       <div class="left-column">
         <CharacterPanel />
-        <ActionPanel @open-gift="showGiftModal = true" />
+        <ActionPanel @open-gift="showGiftModal = true" @open-sms="showSMSModal = true" />
       </div>
       
       <div class="right-column">
@@ -72,6 +74,7 @@ onMounted(() => {
     <CardCollection v-if="showCards" @close="showCards = false" />
     <HistoryPanel v-if="showHistory" @close="showHistory = false" />
     <GiftModal v-if="showGiftModal" @close="showGiftModal = false" />
+    <SMSModal v-if="showSMSModal" @close="showSMSModal = false" />
   </div>
 </template>
 

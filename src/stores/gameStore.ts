@@ -11,7 +11,8 @@ import {
   isGiftDisliked,
   getTimeLabel,
   getNextTimeSlot,
-  getMoodLabel
+  getMoodLabel,
+  calculateSMSReplyChance
 } from '../utils/gameUtils'
 
 export interface CharacterState {
@@ -41,6 +42,19 @@ export interface HistorySnapshot {
   triggeredEvents: string[]
   collectedCards: string[]
   logs: LogEntry[]
+  pendingSMS: PendingSMS[]
+}
+
+export interface PendingSMS {
+  id: number
+  optionId: string
+  characterId: string
+  sentDay: number
+  sentTime: TimeOfDay
+  timeCost: number
+  replied: boolean
+  accepted: boolean
+  replyText: string
 }
 
 export const useGameStore = defineStore('game', () => {
@@ -52,6 +66,10 @@ export const useGameStore = defineStore('game', () => {
   const currentEvent = ref<GameEventConfig | null>(null)
   const showEventModal = ref(false)
   const darkMode = ref(false)
+  const showSMSModal = ref(false)
+  const pendingSMS = ref<PendingSMS[]>([])
+  const lastSMSReply = ref<PendingSMS | null>(null)
+  let smsIdCounter = 0
 
   const characters = ref<CharacterState[]>(
     gameConfig.characters.map(c => ({
@@ -81,6 +99,22 @@ export const useGameStore = defineStore('game', () => {
     gameConfig.characters.find(c => c.id === selectedCharacterId.value) || null
   )
 
+  const unrepliedSMS = computed(() =>
+    pendingSMS.value.filter(s => !s.replied)
+  )
+
+  const availableSMSOptions = computed(() => {
+    if (!selectedCharacterId.value) return []
+    const charState = getCharacterState(selectedCharacterId.value)
+    if (!charState) return []
+    return gameConfig.smsOptions.filter(opt => {
+      if (opt.characterId !== selectedCharacterId.value) return false
+      if (charState.affinity < opt.minAffinity) return false
+      const alreadySent = pendingSMS.value.some(s => s.optionId === opt.id && !s.replied)
+      return !alreadySent
+    })
+  })
+
   function addLog(type: LogEntry['type'], message: string, characterId?: string) {
     logs.value.push({
       id: ++logIdCounter,
@@ -103,7 +137,8 @@ export const useGameStore = defineStore('game', () => {
       flags: [...flags.value],
       triggeredEvents: [...triggeredEvents.value],
       collectedCards: [...collectedCards.value],
-      logs: JSON.parse(JSON.stringify(logs.value))
+      logs: JSON.parse(JSON.stringify(logs.value)),
+      pendingSMS: JSON.parse(JSON.stringify(pendingSMS.value))
     })
     if (history.value.length > 100) {
       history.value.shift()
@@ -122,6 +157,7 @@ export const useGameStore = defineStore('game', () => {
     triggeredEvents.value = [...snapshot.triggeredEvents]
     collectedCards.value = [...snapshot.collectedCards]
     logs.value = JSON.parse(JSON.stringify(snapshot.logs))
+    pendingSMS.value = snapshot.pendingSMS ? JSON.parse(JSON.stringify(snapshot.pendingSMS)) : []
     history.value = history.value.slice(0, stepIndex)
     addLog('system', `回退到第 ${snapshot.day} 天 ${getTimeLabel(snapshot.timeSlot)}`)
   }
@@ -224,6 +260,8 @@ export const useGameStore = defineStore('game', () => {
         return performGift(targetId!, giftId!)
       case 'work':
         return performWork()
+      case 'sms':
+        return false
       default:
         return false
     }
@@ -319,6 +357,103 @@ export const useGameStore = defineStore('game', () => {
     addLog('action', `💼 打工赚了 ${earned} 代币（角色们的心情略有下降）`)
     advanceTime()
     return true
+  }
+
+  function sendSMS(optionId: string): boolean {
+    const option = gameConfig.smsOptions.find(o => o.id === optionId)
+    if (!option) return false
+
+    const charState = getCharacterState(option.characterId)
+    if (!charState || !charState.unlocked) return false
+    if (charState.affinity < option.minAffinity) return false
+
+    if (actionsRemaining.value <= 0) {
+      addLog('system', '⚠️ 今天的行动次数已用完')
+      return false
+    }
+
+    const alreadySent = pendingSMS.value.some(s => s.optionId === optionId && !s.replied)
+    if (alreadySent) return false
+
+    saveHistory()
+    actionsRemaining.value -= 1
+
+    const sms: PendingSMS = {
+      id: ++smsIdCounter,
+      optionId: option.id,
+      characterId: option.characterId,
+      sentDay: day.value,
+      sentTime: timeSlot.value,
+      timeCost: option.timeCost,
+      replied: false,
+      accepted: false,
+      replyText: ''
+    }
+
+    pendingSMS.value.push(sms)
+
+    const charConfig = gameConfig.characters.find(c => c.id === option.characterId)
+    const characterName = charConfig?.name || option.characterId
+    addLog('action', `📱 给 ${characterName} 发了短信：「${option.text}」`, option.characterId)
+
+    for (let i = 0; i < option.timeCost; i++) {
+      advanceTime()
+    }
+
+    processSMSReplies()
+
+    return true
+  }
+
+  function processSMSReplies() {
+    const toProcess = pendingSMS.value.filter(s => !s.replied)
+    if (toProcess.length === 0) return
+
+    for (const sms of toProcess) {
+      const option = gameConfig.smsOptions.find(o => o.id === sms.optionId)
+      if (!option) continue
+
+      const charState = getCharacterState(sms.characterId)
+      if (!charState) continue
+
+      const chance = calculateSMSReplyChance(
+        option,
+        charState.affinity,
+        charState.mood,
+        gameConfig.maxAffinity
+      )
+
+      const roll = Math.random()
+      sms.accepted = roll < chance
+      sms.replied = true
+
+      const charConfig = gameConfig.characters.find(c => c.id === sms.characterId)
+      const characterName = charConfig?.name || sms.characterId
+
+      if (sms.accepted) {
+        sms.replyText = option.replyPositive
+        updateCharacterAffinity(sms.characterId, option.positiveEffects.affinityChange)
+        updateCharacterMood(sms.characterId, option.positiveEffects.moodChange)
+
+        if (option.positiveEffects.flagSet && !flags.value.includes(option.positiveEffects.flagSet)) {
+          flags.value.push(option.positiveEffects.flagSet)
+        }
+
+        addLog('action', `📱 ${characterName} 回复了短信：「${option.replyPositive}」（好感 +${option.positiveEffects.affinityChange}）`, sms.characterId)
+      } else {
+        sms.replyText = option.replyNegative
+        updateCharacterAffinity(sms.characterId, option.negativeEffects.affinityChange)
+        updateCharacterMood(sms.characterId, option.negativeEffects.moodChange)
+
+        addLog('action', `📱 ${characterName} 回复了短信：「${option.replyNegative}」（好感 ${option.negativeEffects.affinityChange}）`, sms.characterId)
+      }
+
+      lastSMSReply.value = { ...sms }
+    }
+  }
+
+  function dismissSMSReply() {
+    lastSMSReply.value = null
   }
 
   function checkAndTriggerEvent() {
@@ -426,6 +561,9 @@ export const useGameStore = defineStore('game', () => {
     selectedCharacterId.value = null
     currentEvent.value = null
     showEventModal.value = false
+    pendingSMS.value = []
+    lastSMSReply.value = null
+    smsIdCounter = 0
 
     characters.value = gameConfig.characters.map(c => ({
       id: c.id,
@@ -470,6 +608,11 @@ export const useGameStore = defineStore('game', () => {
     currentEvent,
     showEventModal,
     darkMode,
+    showSMSModal,
+    pendingSMS,
+    lastSMSReply,
+    unrepliedSMS,
+    availableSMSOptions,
     addLog,
     saveHistory,
     rollbackToStep,
@@ -477,6 +620,8 @@ export const useGameStore = defineStore('game', () => {
     updateCharacterAffinity,
     updateCharacterMood,
     performAction,
+    sendSMS,
+    dismissSMSReply,
     selectCharacter,
     handleEventChoice,
     toggleDarkMode,

@@ -2,7 +2,30 @@ export type TimeOfDay = 'morning' | 'afternoon' | 'evening' | 'night'
 
 export type MoodLevel = 'happy' | 'good' | 'neutral' | 'bad' | 'angry'
 
-export type ActionType = 'chat' | 'gift' | 'work'
+export type ActionType = 'chat' | 'gift' | 'work' | 'sms'
+
+export type SMSStatus = 'sent' | 'replied'
+
+export interface SMSOption {
+  id: string
+  text: string
+  characterId: string
+  description: string
+  minAffinity: number
+  timeCost: number
+  replyPositive: string
+  replyNegative: string
+  positiveEffects: {
+    affinityChange: number
+    moodChange: number
+    flagSet?: string
+  }
+  negativeEffects: {
+    affinityChange: number
+    moodChange: number
+  }
+  baseAcceptChance: number
+}
 
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary'
 
@@ -101,4 +124,5 @@ export interface GameConfig {
   events: GameEventConfig[]
   actions: ActionConfig[]
   workRewards: { min: number; max: number }
+  smsOptions: SMSOption[]
 }

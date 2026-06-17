@@ -302,7 +302,115 @@ export const gameConfig: GameConfig = {
   actions: [
     { type: 'chat', name: '聊天', icon: '💬', description: '和角色聊聊天，增进感情', energyCost: 1 },
     { type: 'gift', name: '送礼', icon: '🎁', description: '送礼物给角色，效果因人而异', energyCost: 1 },
-    { type: 'work', name: '打工', icon: '💼', description: '辛苦工作赚取代币', energyCost: 2 }
+    { type: 'work', name: '打工', icon: '💼', description: '辛苦工作赚取代币', energyCost: 2 },
+    { type: 'sms', name: '短信', icon: '📱', description: '发短信邀约角色，等待回复', energyCost: 1 }
+  ],
+
+  smsOptions: [
+    {
+      id: 'sms_linxiaoyu_library',
+      text: '周末一起去图书馆看书吧？',
+      characterId: 'linxiaoyu',
+      description: '邀约小雨一起去图书馆度过安静的下午',
+      minAffinity: 10,
+      timeCost: 1,
+      replyPositive: '好呀！我正好想看那本新到的诗集，周六见~',
+      replyNegative: '嗯...这周末我可能有事，下次吧。',
+      positiveEffects: { affinityChange: 8, moodChange: 12, flagSet: 'date_linxiaoyu_library' },
+      negativeEffects: { affinityChange: -2, moodChange: -3 },
+      baseAcceptChance: 0.6
+    },
+    {
+      id: 'sms_linxiaoyu_flower',
+      text: '听说城郊的花田开了，要一起去看看吗？',
+      characterId: 'linxiaoyu',
+      description: '邀约小雨去花田赏花',
+      minAffinity: 25,
+      timeCost: 2,
+      replyPositive: '真的吗？我最喜欢花了！一定会去的！🌸',
+      replyNegative: '花田...听起来不错，但我最近花粉过敏...',
+      positiveEffects: { affinityChange: 12, moodChange: 18, flagSet: 'date_linxiaoyu_flower' },
+      negativeEffects: { affinityChange: -1, moodChange: -2 },
+      baseAcceptChance: 0.55
+    },
+    {
+      id: 'sms_linxiaoyu_rain',
+      text: '下雨了，要不要一起在屋檐下躲雨？',
+      characterId: 'linxiaoyu',
+      description: '下雨时邀约小雨共撑一把伞',
+      minAffinity: 40,
+      timeCost: 1,
+      replyPositive: '你也在附近吗？我正好没带伞...等你来哦~',
+      replyNegative: '谢谢...但我已经在室内了。',
+      positiveEffects: { affinityChange: 15, moodChange: 20, flagSet: 'date_linxiaoyu_rain' },
+      negativeEffects: { affinityChange: -2, moodChange: -5 },
+      baseAcceptChance: 0.65
+    },
+    {
+      id: 'sms_sufei_cafe',
+      text: '想去你店里喝杯咖啡，有空吗？',
+      characterId: 'sufei',
+      description: '去苏菲的咖啡馆坐坐',
+      minAffinity: 5,
+      timeCost: 1,
+      replyPositive: '当然有空！来吧，今天给你做新品试喝！☕',
+      replyNegative: '今天店里有活动，可能比较忙，改天吧~',
+      positiveEffects: { affinityChange: 6, moodChange: 10, flagSet: 'date_sufei_cafe' },
+      negativeEffects: { affinityChange: -1, moodChange: -2 },
+      baseAcceptChance: 0.7
+    },
+    {
+      id: 'sms_sufei_bake',
+      text: '能教我做蛋糕吗？想学烘焙！',
+      characterId: 'sufei',
+      description: '和苏菲一起学做甜点',
+      minAffinity: 25,
+      timeCost: 2,
+      replyPositive: '哈哈想学烘焙？来吧！我教你做招牌蛋糕！🧁',
+      replyNegative: '最近新食谱还没研究完，等我准备好了再教你吧~',
+      positiveEffects: { affinityChange: 14, moodChange: 16, flagSet: 'date_sufei_bake' },
+      negativeEffects: { affinityChange: -1, moodChange: -3 },
+      baseAcceptChance: 0.6
+    },
+    {
+      id: 'sms_sufei_game',
+      text: '今晚要不要一起打游戏？',
+      characterId: 'sufei',
+      description: '邀约苏菲一起打游戏到深夜',
+      minAffinity: 40,
+      timeCost: 2,
+      replyPositive: '来啊！我刚买了新游戏，正缺人陪我玩呢！🎮',
+      replyNegative: '今晚不行...明天还要早起开店。',
+      positiveEffects: { affinityChange: 12, moodChange: 15, flagSet: 'date_sufei_game' },
+      negativeEffects: { affinityChange: -3, moodChange: -4 },
+      baseAcceptChance: 0.5
+    },
+    {
+      id: 'sms_yeqing_music',
+      text: '听说你会弹钢琴，能弹给我听吗？',
+      characterId: 'yeqing',
+      description: '请叶青为你演奏一曲',
+      minAffinity: 15,
+      timeCost: 1,
+      replyPositive: '...你想听的话，我可以弹一首。',
+      replyNegative: '......我弹得不好。',
+      positiveEffects: { affinityChange: 10, moodChange: 12, flagSet: 'date_yeqing_music' },
+      negativeEffects: { affinityChange: -3, moodChange: -5 },
+      baseAcceptChance: 0.45
+    },
+    {
+      id: 'sms_yeqing_stargazing',
+      text: '今晚星星很美，要不要一起去天台看星星？',
+      characterId: 'yeqing',
+      description: '和叶青一起在夜晚观星',
+      minAffinity: 35,
+      timeCost: 2,
+      replyPositive: '......好。我在天台等你。',
+      replyNegative: '......今晚不想出门。',
+      positiveEffects: { affinityChange: 16, moodChange: 20, flagSet: 'date_yeqing_stargazing' },
+      negativeEffects: { affinityChange: -2, moodChange: -4 },
+      baseAcceptChance: 0.4
+    }
   ],
 
   workRewards: { min: 15, max: 35 }
